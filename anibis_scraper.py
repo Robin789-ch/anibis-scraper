@@ -6,10 +6,12 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import sqlite3
 import sys
 import time
 from collections.abc import Iterator
 from contextlib import nullcontext
+from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, TextIO
@@ -18,6 +20,52 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 USER_AGENT = "Mozilla/5.0 (compatible; anibis-scraper/0.1; personal-use)"
+
+CREATE_OFFERS_TABLE = """
+CREATE TABLE IF NOT EXISTS offers (
+    listingID TEXT PRIMARY KEY,
+    title TEXT,
+    price TEXT,
+    date TEXT,
+    description TEXT,
+    city TEXT,
+    postcode TEXT,
+    url TEXT NOT NULL,
+    lastSeen TEXT NOT NULL
+)
+"""
+
+CREATE_PRICE_HISTORY_TABLE = """
+CREATE TABLE IF NOT EXISTS offer_price_history (
+    listingID TEXT NOT NULL,
+    price TEXT,
+    observedAt TEXT NOT NULL,
+    PRIMARY KEY (listingID, observedAt)
+)
+"""
+
+INSERT_PRICE_CHANGE = """
+INSERT INTO offer_price_history (listingID, price, observedAt)
+SELECT ?, ?, ?
+WHERE NOT EXISTS (
+    SELECT 1 FROM offers WHERE listingID = ? AND price IS ?
+)
+"""
+
+UPSERT_OFFER = """
+INSERT INTO offers (
+    listingID, title, price, date, description, city, postcode, url, lastSeen
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(listingID) DO UPDATE SET
+    title = excluded.title,
+    price = excluded.price,
+    date = excluded.date,
+    description = excluded.description,
+    city = excluded.city,
+    postcode = excluded.postcode,
+    url = excluded.url,
+    lastSeen = excluded.lastSeen
+"""
 
 
 class ScraperError(RuntimeError):
@@ -126,6 +174,7 @@ def to_offer(node: dict[str, Any], language: str = "fr") -> dict[str, Any]:
     slug = (node.get("seoInformation") or {}).get(f"{language}Slug")
     listing_id = node.get("listingID")
     return {
+        "listingID": listing_id,
         "title": node.get("title"),
         "price": node.get("formattedPrice"),
         "date": node.get("timestamp"),
@@ -174,7 +223,9 @@ def scrape(
                 continue
             if listing_id:
                 seen.add(listing_id)
-            yield to_offer(node, language)
+            offer = to_offer(node, language)
+            offer["lastSeen"] = datetime.now(UTC).isoformat()
+            yield offer
             emitted += 1
             if limit is not None and emitted >= limit:
                 return
@@ -207,6 +258,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("query", help='search text, for example "macbook"')
     parser.add_argument("-o", "--output", type=Path, help="output file (default: stdout)")
+    parser.add_argument("--database", type=Path, help="upsert offers into a SQLite file")
     parser.add_argument("--category", help='exact primary category ID, e.g. "computers"')
     parser.add_argument("--language", choices=("de", "fr", "it"), default="fr")
     parser.add_argument("--delay", type=non_negative_float, default=1.0)
@@ -215,10 +267,73 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def write_offers(offers: Iterator[dict[str, Any]], output: TextIO) -> None:
-    for offer in offers:
-        json.dump(offer, output, ensure_ascii=False)
-        output.write("\n")
+def write_offers(
+    offers: Iterator[dict[str, Any]],
+    output: TextIO,
+    database: Path | None = None,
+) -> None:
+    connection = sqlite3.connect(database, timeout=30) if database else None
+    try:
+        if connection:
+            connection.execute(CREATE_OFFERS_TABLE)
+            history_exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                ("offer_price_history",),
+            ).fetchone()
+            connection.execute(CREATE_PRICE_HISTORY_TABLE)
+            if not history_exists:
+                connection.execute(
+                    """
+                    INSERT INTO offer_price_history (listingID, price, observedAt)
+                    SELECT listingID, price, lastSeen FROM offers
+                    """
+                )
+
+        for offer in offers:
+            if connection:
+                listing_id = offer.get("listingID")
+                url = offer.get("url")
+                if not listing_id:
+                    raise ScraperError("Offer is missing its listingID and cannot be stored")
+                if not url:
+                    raise ScraperError("Offer is missing its URL and cannot be stored")
+                price = offer.get("price")
+                connection.execute(
+                    INSERT_PRICE_CHANGE,
+                    (
+                        str(listing_id),
+                        price,
+                        offer["lastSeen"],
+                        str(listing_id),
+                        price,
+                    ),
+                )
+                connection.execute(
+                    UPSERT_OFFER,
+                    (
+                        str(listing_id),
+                        offer.get("title"),
+                        price,
+                        offer.get("date"),
+                        offer.get("description"),
+                        offer.get("city"),
+                        offer.get("postcode"),
+                        url,
+                        offer["lastSeen"],
+                    ),
+                )
+            json.dump(offer, output, ensure_ascii=False)
+            output.write("\n")
+
+        if connection:
+            connection.commit()
+    except BaseException:
+        if connection:
+            connection.rollback()
+        raise
+    finally:
+        if connection:
+            connection.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -248,8 +363,9 @@ def main(argv: list[str] | None = None) -> int:
                     limit=args.limit,
                 ),
                 output,
+                args.database,
             )
-    except (OSError, ScraperError) as error:
+    except (OSError, ScraperError, sqlite3.Error) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:
