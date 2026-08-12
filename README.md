@@ -24,24 +24,18 @@ This project only reads public, server-rendered search pages. It does not use
 the disallowed `/api/` path, bypass access controls, solve CAPTCHAs, or collect
 seller account/contact fields. Keep the default delay or increase it.
 
-## Setup
-
-```bash
-uv sync
-```
-
-The project has no third-party Python dependencies.
+Requires Python 3.11 or newer. The project has no third-party dependencies.
 
 ## Run
 
 ```bash
-uv run python anibis_scraper.py "macbook" --output offers.jsonl
+python3 anibis_scraper.py "macbook" --output offers.jsonl
 ```
 
 Filter locally by Anibis's exact primary category ID:
 
 ```bash
-uv run python anibis_scraper.py "macbook" --category computers --output offers.jsonl
+python3 anibis_scraper.py "macbook" --category computers --output offers.jsonl
 ```
 
 Category filtering happens after each search page is downloaded, so it reduces
@@ -51,7 +45,7 @@ Optionally upsert every returned offer into a local SQLite database while still
 writing the normal JSONL output:
 
 ```bash
-uv run python anibis_scraper.py "macbook" --database offers.sqlite3 --output offers.jsonl
+python3 anibis_scraper.py "macbook" --database offers.sqlite3 --output offers.jsonl
 ```
 
 The `offers` table uses Anibis's listing ID as its primary key. Running the
@@ -68,7 +62,7 @@ By default the scraper follows all result pages sequentially with a one-second
 delay. Progress goes to stderr, so stdout can be redirected safely:
 
 ```bash
-uv run python anibis_scraper.py "macbook" > offers.jsonl
+python3 anibis_scraper.py "macbook" > offers.jsonl
 ```
 
 Useful options:
@@ -85,7 +79,7 @@ Useful options:
 Run the checks with:
 
 ```bash
-uv run python -m unittest -v
+python3 -m unittest -v
 ```
 
 ## Why plain HTTP instead of a browser?

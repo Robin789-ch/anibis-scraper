@@ -123,22 +123,20 @@ class ScraperTest(unittest.TestCase):
 
         with TemporaryDirectory() as directory:
             database = Path(directory) / "offers.sqlite3"
-            write_offers(iter([offer]), io.StringIO(), database)
+            write_offers([offer], io.StringIO(), database)
             write_offers(
-                iter([{**offer, "lastSeen": "2026-08-13T07:00:00+00:00"}]),
+                [{**offer, "lastSeen": "2026-08-13T07:00:00+00:00"}],
                 io.StringIO(),
                 database,
             )
             write_offers(
-                iter(
-                    [
-                        {
-                            **offer,
-                            "price": "450.-",
-                            "lastSeen": "2026-08-13T08:00:00+00:00",
-                        }
-                    ]
-                ),
+                [
+                    {
+                        **offer,
+                        "price": "450.-",
+                        "lastSeen": "2026-08-13T08:00:00+00:00",
+                    }
+                ],
                 io.StringIO(),
                 database,
             )
@@ -193,21 +191,19 @@ class ScraperTest(unittest.TestCase):
                 )
 
             write_offers(
-                iter(
-                    [
-                        {
-                            "listingID": "42",
-                            "title": "MacBook Pro",
-                            "price": "500.-",
-                            "date": None,
-                            "description": None,
-                            "city": None,
-                            "postcode": None,
-                            "url": "https://www.anibis.ch/fr/vi/macbook/42",
-                            "lastSeen": "2026-08-13T08:00:00+00:00",
-                        }
-                    ]
-                ),
+                [
+                    {
+                        "listingID": "42",
+                        "title": "MacBook Pro",
+                        "price": "500.-",
+                        "date": None,
+                        "description": None,
+                        "city": None,
+                        "postcode": None,
+                        "url": "https://www.anibis.ch/fr/vi/macbook/42",
+                        "lastSeen": "2026-08-13T08:00:00+00:00",
+                    }
+                ],
                 io.StringIO(),
                 database,
             )

@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """Export Anibis search results as JSON Lines."""
 
-from __future__ import annotations
-
 import argparse
 import json
 import math
 import sqlite3
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from contextlib import nullcontext
 from datetime import UTC, datetime
 from html.parser import HTMLParser
@@ -268,7 +266,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def write_offers(
-    offers: Iterator[dict[str, Any]],
+    offers: Iterable[dict[str, Any]],
     output: TextIO,
     database: Path | None = None,
 ) -> None:
