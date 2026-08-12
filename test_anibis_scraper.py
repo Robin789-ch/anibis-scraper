@@ -1,7 +1,8 @@
 import json
 import unittest
+from unittest.mock import patch
 
-from anibis_scraper import page_url, parse_search_page, result_nodes, to_offer
+from anibis_scraper import page_url, parse_search_page, result_nodes, scrape, to_offer
 
 
 class ScraperTest(unittest.TestCase):
@@ -13,6 +14,7 @@ class ScraperTest(unittest.TestCase):
             "timestamp": "2026-08-12T12:00:00+02:00",
             "body": "Good condition",
             "postcodeInformation": {"locationName": "Bern", "postcode": "3000"},
+            "seoInformation": {"frSlug": "berne/informatique/macbook"},
         }
         payload = {
             "props": {
@@ -54,6 +56,7 @@ class ScraperTest(unittest.TestCase):
                 "description": "Good condition",
                 "city": "Bern",
                 "postcode": "3000",
+                "url": "https://www.anibis.ch/fr/vi/berne/informatique/macbook/42",
             },
         )
 
@@ -63,7 +66,35 @@ class ScraperTest(unittest.TestCase):
             "https://www.anibis.ch/fr/q/cherche/token?page=2",
         )
 
+    @patch("anibis_scraper.fetch_page")
+    def test_filters_by_primary_category_before_applying_limit(self, fetch_page) -> None:
+        nodes = [
+            {
+                "listingID": "1",
+                "title": "MacBook sleeve",
+                "primaryCategory": {"categoryID": "computerComponentsAccessories"},
+            },
+            {
+                "listingID": "2",
+                "title": "MacBook Pro",
+                "primaryCategory": {"categoryID": "computers"},
+            },
+        ]
+        fetch_page.return_value = (
+            {
+                "listings": {
+                    "totalCount": len(nodes),
+                    "edges": [{"node": node} for node in nodes],
+                },
+                "galleryListings": [],
+            },
+            "https://www.anibis.ch/fr/q/cherche/token",
+        )
+
+        offers = list(scrape("macbook", category="computers", limit=1))
+
+        self.assertEqual([offer["title"] for offer in offers], ["MacBook Pro"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -121,8 +121,10 @@ def result_nodes(result: dict[str, Any]) -> Iterator[dict[str, Any]]:
             yield node
 
 
-def to_offer(node: dict[str, Any]) -> dict[str, Any]:
+def to_offer(node: dict[str, Any], language: str = "fr") -> dict[str, Any]:
     location = node.get("postcodeInformation") or {}
+    slug = (node.get("seoInformation") or {}).get(f"{language}Slug")
+    listing_id = node.get("listingID")
     return {
         "title": node.get("title"),
         "price": node.get("formattedPrice"),
@@ -130,12 +132,18 @@ def to_offer(node: dict[str, Any]) -> dict[str, Any]:
         "description": node.get("body"),
         "city": location.get("locationName"),
         "postcode": location.get("postcode"),
+        "url": (
+            f"https://www.anibis.ch/{language}/vi/{slug}/{listing_id}"
+            if slug and listing_id
+            else None
+        ),
     }
 
 
 def scrape(
     query: str,
     *,
+    category: str | None = None,
     language: str = "fr",
     delay: float = 1.0,
     timeout: float = 30.0,
@@ -157,12 +165,16 @@ def scrape(
         print(f"page {page}/{pages}", file=sys.stderr)
 
         for node in result_nodes(result):
+            if category and (node.get("primaryCategory") or {}).get(
+                "categoryID"
+            ) != category:
+                continue
             listing_id = str(node.get("listingID", ""))
             if listing_id and listing_id in seen:
                 continue
             if listing_id:
                 seen.add(listing_id)
-            yield to_offer(node)
+            yield to_offer(node, language)
             emitted += 1
             if limit is not None and emitted >= limit:
                 return
@@ -195,6 +207,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("query", help='search text, for example "macbook"')
     parser.add_argument("-o", "--output", type=Path, help="output file (default: stdout)")
+    parser.add_argument("--category", help='exact primary category ID, e.g. "computers"')
     parser.add_argument("--language", choices=("de", "fr", "it"), default="fr")
     parser.add_argument("--delay", type=non_negative_float, default=1.0)
     parser.add_argument("--timeout", type=positive_float, default=30.0)
@@ -213,6 +226,10 @@ def main(argv: list[str] | None = None) -> int:
     if not args.query.strip():
         print("error: query must not be empty", file=sys.stderr)
         return 2
+    category = args.category.strip() if args.category else None
+    if args.category is not None and not category:
+        print("error: category must not be empty", file=sys.stderr)
+        return 2
 
     try:
         output_context = (
@@ -224,6 +241,7 @@ def main(argv: list[str] | None = None) -> int:
             write_offers(
                 scrape(
                     args.query.strip(),
+                    category=category,
                     language=args.language,
                     delay=args.delay,
                     timeout=args.timeout,
