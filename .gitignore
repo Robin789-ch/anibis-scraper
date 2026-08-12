@@ -1,0 +1,4 @@
+.venv/
+offers.jsonl
+__pycache__/
+
