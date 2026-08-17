@@ -56,7 +56,7 @@ price string and appends another row only when that string changes. Its
 databases are seeded with their currently known price when the history table is
 first created. All database writes for a run use one transaction.
 
-The output file must not already exist, which prevents accidental overwrites.
+If the output file already exists, it is overwritten.
 
 By default the scraper follows all result pages sequentially with a one-second
 delay. Progress goes to stderr, so stdout can be redirected safely:

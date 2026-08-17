@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from anibis_scraper import (
+    main,
     page_url,
     parse_search_page,
     result_nodes,
@@ -17,6 +18,17 @@ from anibis_scraper import (
 
 
 class ScraperTest(unittest.TestCase):
+    @patch("anibis_scraper.scrape", return_value=[])
+    def test_output_file_is_overwritten(self, scrape) -> None:
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "offers.jsonl"
+            output.write_text("stale\n", encoding="utf-8")
+
+            result = main(["macbook", "--output", str(output)])
+
+            self.assertEqual(result, 0)
+            self.assertEqual(output.read_text(encoding="utf-8"), "")
+
     def test_parses_next_data_and_maps_requested_fields(self) -> None:
         node = {
             "listingID": "42",

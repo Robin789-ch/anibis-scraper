@@ -346,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         output_context = (
-            args.output.open("x", encoding="utf-8")
+            args.output.open("w", encoding="utf-8")
             if args.output
             else nullcontext(sys.stdout)
         )
