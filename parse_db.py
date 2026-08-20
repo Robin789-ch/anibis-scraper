@@ -40,9 +40,10 @@ agent = Agent(
         "storageSize: SSD storage capacity, in GB.\n"
         "screenSize: Screen diagonal, in inches.\n"
         "damaged: True if the laptop is damaged, False if not damaged.\n"
-        "batteryHealth: Percentage of the battery health as an integer. Give an estimate if "
-        "the description contains only a qualitative estimation. A full battery on Apple Silicon "
-        "typically last 15 to 20 hours. Write 0 if no information is given at all.\n"
+        "batteryHealth: Percentage of the max battery capacity as an integer. 100 means brand new, "
+        "0 means battery is dead. Give a pessimistic estimate if "
+        "the description contains only a qualitative estimation. A healthy battery "
+        "typically last 18 hours. Write 0 if no information is given at all.\n"
         "year: Production year. Use '0' if the year is not mentioned."
     ),
 )
