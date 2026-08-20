@@ -1,10 +1,9 @@
 import asyncio
 import sqlite3
+import time
 from typing import Literal
 
-import pandas as pd
 from dotenv import load_dotenv
-from keyring.backends.macOS.api import create_query
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
@@ -23,6 +22,7 @@ load_dotenv()
 
 agent = Agent(
     "openrouter:nvidia/nemotron-3.5-lightning:free",
+    # "openrouter:deepseek/deepseek-v4-flash-0731",
     output_type=MacBookModel,
     instructions=(
         "You are an expert in computer hardware. Your task is to label MacBook "
@@ -71,9 +71,19 @@ def create_parsed_table(cursor: sqlite3.Cursor):
     cursor.execute(new_table_query)
 
 
-def parse_db():
+def init_db_connection(db):
+    sqliteConnection = sqlite3.connect(db)
+    cursor = sqliteConnection.cursor()
 
-    sqliteConnection = sqlite3.connect("offers.sqlite3")
+    # Create the 'parsed' table if it does not exist.
+    create_parsed_table(cursor)
+
+    print(f"Successful connection to {db}")
+    return sqliteConnection
+
+
+def parse_db(sqliteConnection, max_rq=20):
+
     cursor = sqliteConnection.cursor()
 
     # Create the 'parsed' table if it does not exist.
@@ -90,13 +100,15 @@ def parse_db():
                     """
 
     cursor.execute(unprocessed)
-    rows = cursor.fetchall()
+    queries = cursor.fetchall()
 
-    print(f"Unprocessed: {len(rows)} rows")
+    if len(queries) == 0:
+        return 0
 
-    queries = rows[:3]
+    print(f"Unprocessed: {len(queries)} rows")
 
-    results = asyncio.run(LLM_Parser_Vectorized(queries))
+    num_rq = max(max_rq, len(queries))
+    results = asyncio.run(LLM_Parser_Vectorized(queries[:num_rq]))
 
     rows = [
         (
@@ -128,10 +140,16 @@ def parse_db():
         rows,
     )
 
+    print(f"Successfully processed {len(results)} offers.\n")
     sqliteConnection.commit()
-    return
+    return 1
 
 
 if __name__ == "__main__":
     # asyncio.run(LLM_Parser())
-    parse_db()
+    conn = init_db_connection("offers.sqlite3")
+
+    while parse_db(conn, max_rq=10):
+        time.sleep(60)
+
+    print("All waiting offers have been processed !")
