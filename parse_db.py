@@ -1,6 +1,5 @@
 import asyncio
 import sqlite3
-import time
 from typing import Literal
 
 from dotenv import load_dotenv
@@ -15,14 +14,16 @@ class MacBookModel(BaseModel):
     RAM: int
     storageSize: int
     screenSize: int
+    damaged: bool
+    batteryHealth: int = Field(ge=0, le=100)
     year: int = Field(ge=0, le=2026)
 
 
 load_dotenv()
 
 agent = Agent(
-    "openrouter:nvidia/nemotron-3.5-lightning:free",
-    # "openrouter:deepseek/deepseek-v4-flash-0731",
+    # "openrouter:nvidia/nemotron-3.5-lightning:free",
+    "openrouter:deepseek/deepseek-v4-flash-0731",
     output_type=MacBookModel,
     instructions=(
         "You are an expert in computer hardware. Your task is to label MacBook "
@@ -38,6 +39,10 @@ agent = Agent(
         "RAM: Installed RAM or unified memory, in GB.\n"
         "storageSize: SSD storage capacity, in GB.\n"
         "screenSize: Screen diagonal, in inches.\n"
+        "damaged: True if the laptop is damaged, False if not damaged.\n"
+        "batteryHealth: Percentage of the battery health as an integer. Give an estimate if "
+        "the description contains only a qualitative estimation. A full battery on Apple Silicon "
+        "typically last 15 to 20 hours. Write 0 if no information is given at all.\n"
         "year: Production year. Use '0' if the year is not mentioned."
     ),
 )
@@ -56,6 +61,10 @@ async def LLM_Parser_Vectorized(queries):
     return await asyncio.gather(*(LLM_Parser(query) for query in queries))
 
 
+def clear_table(cursor: sqlite3.Cursor):
+    cursor.execute("DROP TABLE IF EXISTS parsed")
+
+
 def create_parsed_table(cursor: sqlite3.Cursor):
     new_table_query = """CREATE TABLE IF NOT EXISTS 
                         parsed (
@@ -66,6 +75,8 @@ def create_parsed_table(cursor: sqlite3.Cursor):
                             RAM INTEGER,
                             storageSize INTEGER,
                             screenSize INTEGER,
+                            damaged BOOLEAN,
+                            batteryHealth INTEGER,
                             year INTEGER
                             );"""
     cursor.execute(new_table_query)
@@ -73,10 +84,6 @@ def create_parsed_table(cursor: sqlite3.Cursor):
 
 def init_db_connection(db):
     sqliteConnection = sqlite3.connect(db)
-    cursor = sqliteConnection.cursor()
-
-    # Create the 'parsed' table if it does not exist.
-    create_parsed_table(cursor)
 
     print(f"Successful connection to {db}")
     return sqliteConnection
@@ -85,9 +92,6 @@ def init_db_connection(db):
 def parse_db(sqliteConnection, max_rq=20):
 
     cursor = sqliteConnection.cursor()
-
-    # Create the 'parsed' table if it does not exist.
-    create_parsed_table(cursor)
 
     unprocessed = """SELECT 
                         listingID,
@@ -119,6 +123,8 @@ def parse_db(sqliteConnection, max_rq=20):
             spec.RAM,
             spec.storageSize,
             spec.screenSize,
+            spec.damaged,
+            spec.batteryHealth,
             spec.year,
         )
         for listingID, spec in results
@@ -134,9 +140,11 @@ def parse_db(sqliteConnection, max_rq=20):
         RAM,
         storageSize,
         screenSize,
+        damaged,
+        batteryHealth,
         year
         ) 
-        VALUES (?,?,?,?,?,?,?,?)""",
+        VALUES (?,?,?,?,?,?,?,?,?,?)""",
         rows,
     )
 
@@ -148,8 +156,17 @@ def parse_db(sqliteConnection, max_rq=20):
 if __name__ == "__main__":
     # asyncio.run(LLM_Parser())
     conn = init_db_connection("offers.sqlite3")
+    cursor = conn.cursor()
 
-    while parse_db(conn, max_rq=10):
-        time.sleep(60)
+    # Clear the parsed table
+    # clear_table(cursor)
+
+    # cursor.execute("DELETE FROM parsed WHERE listingID = ?", ("54763724",))
+    # conn.commit()
+
+    # Create the 'parsed' table if it does not exist.
+    create_parsed_table(cursor)
+
+    parse_db(conn)
 
     print("All waiting offers have been processed !")
