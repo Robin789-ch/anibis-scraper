@@ -95,6 +95,7 @@ class NextDataParser(HTMLParser):
         return "".join(self._parts)
 
 
+
 def parse_search_page(html: str) -> dict[str, Any]:
     parser = NextDataParser()
     parser.feed(html)
@@ -254,6 +255,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Export every Anibis result for a search query as JSON Lines."
     )
+    
     parser.add_argument("query", help='search text, for example "macbook"')
     parser.add_argument("-o", "--output", type=Path, help="output file (default: stdout)")
     parser.add_argument("--database", type=Path, help="upsert offers into a SQLite file")
