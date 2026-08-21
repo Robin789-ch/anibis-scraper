@@ -82,6 +82,35 @@ Run the checks with:
 python3 -m unittest -v
 ```
 
+## Telegram good-buy notifications
+
+Create a bot with Telegram's `@BotFather`, send that bot any message, then set
+its token and your chat ID:
+
+```bash
+export TELEGRAM_BOT_TOKEN="123456:replace-me"
+export TELEGRAM_CHAT_ID="123456789"
+```
+
+Call `send_message` with the listing details and either an image or a function
+that returns one:
+
+```python
+from telegram_bot import dummy_plot, send_message
+
+send_message(
+    specs="MacBook Pro 14-inch · M3 Pro · 18 GB RAM · 512 GB SSD",
+    price=1190,
+    expectedPrice=1650,
+    url="https://www.anibis.ch/",
+    image=lambda: dummy_plot(expected_price=1650, actual_price=1190),
+)
+```
+
+For a dummy end-to-end notification, run `python3 telegram_bot.py`. The `image`
+argument also accepts PNG bytes, a binary file, an image path, or a Matplotlib
+figure. No real listing data is connected yet.
+
 ## Why plain HTTP instead of a browser?
 
 The search UI redirects `/{language}/q?query=...` to a canonical search URL.
