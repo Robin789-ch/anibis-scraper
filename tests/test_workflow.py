@@ -91,13 +91,17 @@ class WorkflowTest(unittest.TestCase):
                 patch("anibis_deals.telegram.deal_plot", return_value=object()),
                 patch("matplotlib.pyplot.close"),
             ):
-                self.assertEqual(notify_new_prospects(database, [prospect]), 1)
-                self.assertEqual(notify_new_prospects(database, [prospect]), 0)
+                market = pd.DataFrame([prospect])
+                self.assertEqual(notify_new_prospects(database, [prospect], market), 1)
+                self.assertEqual(notify_new_prospects(database, [prospect], market), 0)
 
         send.assert_called_once()
 
     @patch("main.notify_new_prospects", return_value=1)
-    @patch("main.find_best_prospects", return_value=[{"listingID": "1"}])
+    @patch(
+        "main.find_best_prospects",
+        return_value=([{"listingID": "1"}], pd.DataFrame()),
+    )
     @patch("main.parse_database", return_value=2)
     @patch("main.refresh_database", return_value=10)
     def test_main_runs_the_complete_workflow(self, refresh, parse, find, notify) -> None:
@@ -110,7 +114,8 @@ class WorkflowTest(unittest.TestCase):
         refresh.assert_called_once_with(database, "macbook", category="computers")
         parse.assert_called_once_with(database)
         find.assert_called_once_with(database, 0.01)
-        notify.assert_called_once_with(database, [{"listingID": "1"}])
+        notify.assert_called_once()
+        self.assertEqual(notify.call_args.args[:2], (database, [{"listingID": "1"}]))
         messages = [record.getMessage() for record in logs.records]
         self.assertIn("Step completed: scrape (offers=10)", messages)
         self.assertIn("Step completed: parse (offers=2)", messages)

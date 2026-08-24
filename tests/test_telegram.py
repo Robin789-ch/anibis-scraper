@@ -2,6 +2,8 @@ import io
 import unittest
 from unittest.mock import patch
 
+import pandas as pd
+
 from anibis_deals.telegram import TelegramError, deal_plot, send_message
 
 
@@ -47,13 +49,24 @@ class TelegramBotTest(unittest.TestCase):
             with self.assertRaisesRegex(TelegramError, "TELEGRAM_BOT_TOKEN"):
                 send_message("MacBook Air", 700, 900, "https://example.com", object())
 
-    def test_deal_plot_can_be_rendered(self) -> None:
+    def test_deal_plot_shows_market_and_highlights_listing(self) -> None:
         from matplotlib import pyplot as plt
 
-        figure = deal_plot(1_650, 1_190)
+        market = pd.DataFrame(
+            {"expectedPrice": [800, 1_200], "price": [750, 1_350]}
+        )
+        prospect = {"expectedPrice": 1_650, "price": 1_190}
+        figure = deal_plot(market, prospect)
         output = io.BytesIO()
         figure.savefig(output, format="png")
         self.assertTrue(output.getvalue().startswith(b"\x89PNG"))
+        axis = figure.axes[0]
+        self.assertEqual(axis.get_xscale(), "log")
+        self.assertEqual(axis.get_yscale(), "log")
+        self.assertEqual(len(axis.collections), 2)
+        self.assertEqual(
+            axis.collections[-1].get_offsets().tolist(), [[1_650.0, 1_190.0]]
+        )
         plt.close(figure)
 
 

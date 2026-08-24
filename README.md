@@ -49,6 +49,17 @@ uv run python -m anibis_deals.scraper macbook \
   --category computers --database offers.sqlite3 --output offers.jsonl
 ```
 
+Delete the rows from one table without deleting its schema or touching the
+other tables (the command asks for confirmation):
+
+```bash
+uv run python -m anibis_deals.tools clear-table-rows parsed
+```
+
+Clearing `parsed` makes the next workflow run classify the whole stored dataset
+again. Other choices are `offers`, `offer_price_history`, and `notifications`.
+Automated scripts must opt in explicitly with `--yes`.
+
 ## Usage constraint
 
 Anibis's conditions of use prohibit automated scripts that collect information

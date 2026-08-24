@@ -45,12 +45,12 @@ def main(
 
         step = "rank"
         logger.info("Step started: %s", step)
-        prospects = find_best_prospects(database, top_share)
+        prospects, market = find_best_prospects(database, top_share)
         logger.info("Step completed: %s (prospects=%d)", step, len(prospects))
 
         step = "notify"
         logger.info("Step started: %s", step)
-        notified = notify_new_prospects(database, prospects)
+        notified = notify_new_prospects(database, prospects, market)
         logger.info("Step completed: %s (notifications=%d)", step, notified)
     except Exception:
         logger.exception("Workflow failed during step: %s", step)

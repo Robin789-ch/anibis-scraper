@@ -104,8 +104,10 @@ def rank_prospects(market: pd.DataFrame) -> pd.DataFrame:
     return ranked.sort_values("rankPosition")
 
 
-def find_best_prospects(database: Path, top_share: float = 0.01) -> list[dict]:
-    """Return the best ``top_share`` of usable listings."""
+def find_best_prospects(
+    database: Path, top_share: float = 0.01
+) -> tuple[list[dict], pd.DataFrame]:
+    """Return the best ``top_share`` and the ranked market used to plot them."""
     if not 0 < top_share <= 1:
         raise ValueError("top_share must be between 0 and 1")
     logger.info("Loading eligible offers from %s", database)
@@ -113,6 +115,6 @@ def find_best_prospects(database: Path, top_share: float = 0.01) -> list[dict]:
     logger.info("Ranking %d eligible offers", len(market))
     ranked = rank_prospects(market)
     if ranked.empty:
-        return []
+        return [], ranked
     count = max(1, math.ceil(top_share * len(ranked)))
-    return ranked.head(count).to_dict("records")
+    return ranked.head(count).to_dict("records"), ranked

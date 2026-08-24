@@ -127,22 +127,48 @@ def send_message(
     return payload
 
 
-def deal_plot(expected_price: float, actual_price: float) -> Any:
-    """Return a compact expected-versus-asking-price figure."""
+def deal_plot(market: Any, prospect: dict[str, Any]) -> Any:
+    """Plot the market and highlight one suggested listing."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    figure, axis = plt.subplots(figsize=(7, 3))
-    bars = axis.barh(
-        ["Asking price", "Model expectation"],
-        [actual_price, expected_price],
-        color=["#d94a62", "#173a5e"],
+    figure, axis = plt.subplots(figsize=(8, 6.5))
+    axis.scatter(
+        market["expectedPrice"],
+        market["price"],
+        color="#8A94A6",
+        s=65,
+        alpha=0.85,
+        edgecolor="white",
+        linewidth=0.5,
+        label="Market range",
     )
-    axis.bar_label(bars, labels=[_format_chf(actual_price), _format_chf(expected_price)])
-    axis.set(title="Anibis asking price versus model expectation", xlabel="CHF")
-    axis.spines[["top", "right", "left"]].set_visible(False)
+    axis.scatter(
+        [prospect["expectedPrice"]],
+        [prospect["price"]],
+        color="#D1495B",
+        s=90,
+        edgecolor="white",
+        linewidth=0.7,
+        zorder=3,
+        label="Suggested listing",
+    )
+    low = min(market["expectedPrice"].min(), market["price"].min())
+    high = max(market["expectedPrice"].max(), market["price"].max())
+    limits = [max(40, low * 0.85), high * 1.15]
+    axis.plot(limits, limits, "--", color="#17324D", label="Expected = asking")
+    axis.set(
+        xscale="log",
+        yscale="log",
+        xlim=limits,
+        ylim=limits,
+        title="Actual asking price versus model expectation",
+        xlabel="Expected asking price (CHF)",
+        ylabel="Actual asking price (CHF)",
+    )
+    axis.legend(frameon=False)
     figure.tight_layout()
     return figure
 
@@ -156,7 +182,9 @@ def _specs(prospect: dict[str, Any]) -> str:
     )
 
 
-def notify_new_prospects(database: Path, prospects: Iterable[dict[str, Any]]) -> int:
+def notify_new_prospects(
+    database: Path, prospects: Iterable[dict[str, Any]], market: Any
+) -> int:
     """Notify prospects not previously sent and remember each successful send."""
     with closing(sqlite3.connect(database)) as connection:
         connection.execute(
@@ -187,7 +215,7 @@ def notify_new_prospects(database: Path, prospects: Iterable[dict[str, Any]]) ->
             )
             expected_price = float(prospect["expectedPrice"])
             actual_price = float(prospect["price"])
-            figure = deal_plot(expected_price, actual_price)
+            figure = deal_plot(market, prospect)
             try:
                 send_message(
                     _specs(prospect),
