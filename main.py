@@ -6,7 +6,7 @@ from pathlib import Path
 from anibis_deals.analysis import find_best_prospects
 from anibis_deals.parser import parse_database
 from anibis_deals.scraper import refresh_database
-from anibis_deals.telegram import notify_new_prospects
+from anibis_deals.telegram import notify_new_prospects, notify_workflow_failure
 
 DATABASE = Path(__file__).with_name("offers.sqlite3")
 logger = logging.getLogger(__name__)
@@ -54,6 +54,10 @@ def main(
         logger.info("Step completed: %s (notifications=%d)", step, notified)
     except Exception:
         logger.exception("Workflow failed during step: %s", step)
+        try:
+            notify_workflow_failure(step)
+        except Exception:
+            logger.exception("Could not send Telegram failure notification")
         raise
 
     logger.info(

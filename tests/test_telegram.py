@@ -4,7 +4,12 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from anibis_deals.telegram import TelegramError, deal_plot, send_message
+from anibis_deals.telegram import (
+    TelegramError,
+    deal_plot,
+    notify_workflow_failure,
+    send_message,
+)
 
 
 class Response(io.BytesIO):
@@ -21,6 +26,19 @@ class Figure:
 
 
 class TelegramBotTest(unittest.TestCase):
+    @patch("anibis_deals.telegram.urlopen")
+    def test_sends_terse_workflow_failure_notification(self, urlopen) -> None:
+        urlopen.return_value = Response(b'{"ok": true}')
+
+        notify_workflow_failure("parse", bot_token="secret", chat_id="123")
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.full_url, "https://api.telegram.org/botsecret/sendMessage")
+        self.assertEqual(
+            request.data.decode(),
+            "chat_id=123&text=%E2%9D%8C+Anibis+workflow+failed%3A+parse",
+        )
+
     @patch("anibis_deals.telegram.urlopen")
     def test_sends_formatted_photo_notification(self, urlopen) -> None:
         urlopen.return_value = Response(b'{"ok": true, "result": {"message_id": 42}}')

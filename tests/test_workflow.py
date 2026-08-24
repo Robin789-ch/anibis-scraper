@@ -122,17 +122,24 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn("Step completed: rank (prospects=1)", messages)
         self.assertIn("Step completed: notify (notifications=1)", messages)
 
+    @patch(
+        "main.notify_workflow_failure", side_effect=RuntimeError("Telegram unavailable")
+    )
     @patch("main.parse_database", side_effect=RuntimeError("LLM unavailable"))
     @patch("main.refresh_database", return_value=10)
-    def test_main_logs_the_failing_step(self, refresh, parse) -> None:
+    def test_main_reports_the_failing_step(self, refresh, parse, notify_failure) -> None:
         from main import main
 
         with self.assertLogs("main", level="INFO") as logs:
             with self.assertRaisesRegex(RuntimeError, "LLM unavailable"):
                 main(Path("test.sqlite3"))
 
-        self.assertIn("Workflow failed during step: parse", logs.output[-1])
+        self.assertTrue(
+            any("Workflow failed during step: parse" in message for message in logs.output)
+        )
+        self.assertIn("Could not send Telegram failure notification", logs.output[-1])
         self.assertIsNotNone(logs.records[-1].exc_info)
+        notify_failure.assert_called_once_with("parse")
 
 
 if __name__ == "__main__":

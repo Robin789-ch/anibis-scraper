@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from dotenv import load_dotenv
@@ -24,6 +24,36 @@ logger = logging.getLogger(__name__)
 
 class TelegramError(RuntimeError):
     """A readable Telegram notification failure."""
+
+
+def notify_workflow_failure(
+    step: str,
+    *,
+    bot_token: str | None = None,
+    chat_id: str | None = None,
+    timeout: float = 30,
+) -> None:
+    """Send a terse workflow failure notification."""
+    bot_token = bot_token or os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = chat_id or os.getenv("TELEGRAM_CHAT_ID")
+    if not bot_token or not chat_id:
+        raise TelegramError("Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID before sending")
+
+    request = Request(
+        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+        data=urlencode(
+            {"chat_id": chat_id, "text": f"❌ Anibis workflow failed: {step}"}
+        ).encode(),
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=timeout) as response:
+            payload = json.load(response)
+    except (HTTPError, URLError) as error:
+        raise TelegramError("Could not send Telegram failure notification") from error
+
+    if not payload.get("ok"):
+        raise TelegramError("Telegram rejected the failure notification")
 
 
 def _format_chf(value: float) -> str:
