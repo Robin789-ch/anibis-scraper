@@ -2,11 +2,12 @@ import io
 import json
 import sqlite3
 import unittest
+from contextlib import closing
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from anibis_scraper import (
+from anibis_deals.scraper import (
     main,
     page_url,
     parse_search_page,
@@ -18,7 +19,7 @@ from anibis_scraper import (
 
 
 class ScraperTest(unittest.TestCase):
-    @patch("anibis_scraper.scrape", return_value=[])
+    @patch("anibis_deals.scraper.scrape", return_value=[])
     def test_output_file_is_overwritten(self, scrape) -> None:
         with TemporaryDirectory() as directory:
             output = Path(directory) / "offers.jsonl"
@@ -90,7 +91,7 @@ class ScraperTest(unittest.TestCase):
             "https://www.anibis.ch/fr/q/cherche/token?page=2",
         )
 
-    @patch("anibis_scraper.fetch_page")
+    @patch("anibis_deals.scraper.fetch_page")
     def test_filters_by_primary_category_before_applying_limit(self, fetch_page) -> None:
         nodes = [
             {
@@ -153,7 +154,7 @@ class ScraperTest(unittest.TestCase):
                 database,
             )
 
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 rows = connection.execute(
                     "SELECT listingID, price, lastSeen FROM offers"
                 ).fetchall()
@@ -177,7 +178,7 @@ class ScraperTest(unittest.TestCase):
     def test_existing_database_seeds_current_price_history(self) -> None:
         with TemporaryDirectory() as directory:
             database = Path(directory) / "offers.sqlite3"
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 connection.execute(
                     """
                     CREATE TABLE offers (
@@ -201,6 +202,7 @@ class ScraperTest(unittest.TestCase):
                         "2026-08-12T12:01:00+00:00",
                     ),
                 )
+                connection.commit()
 
             write_offers(
                 [
@@ -220,7 +222,7 @@ class ScraperTest(unittest.TestCase):
                 database,
             )
 
-            with sqlite3.connect(database) as connection:
+            with closing(sqlite3.connect(database)) as connection:
                 history = connection.execute(
                     "SELECT price, observedAt FROM offer_price_history"
                 ).fetchall()

@@ -2,7 +2,7 @@ import io
 import unittest
 from unittest.mock import patch
 
-from telegram_bot import TelegramError, dummy_plot, send_message
+from anibis_deals.telegram import TelegramError, deal_plot, send_message
 
 
 class Response(io.BytesIO):
@@ -13,8 +13,13 @@ class Response(io.BytesIO):
         self.close()
 
 
+class Figure:
+    def savefig(self, target, **kwargs):
+        target.write(b"PNG DATA")
+
+
 class TelegramBotTest(unittest.TestCase):
-    @patch("telegram_bot.urlopen")
+    @patch("anibis_deals.telegram.urlopen")
     def test_sends_formatted_photo_notification(self, urlopen) -> None:
         urlopen.return_value = Response(b'{"ok": true, "result": {"message_id": 42}}')
 
@@ -23,7 +28,7 @@ class TelegramBotTest(unittest.TestCase):
             1190,
             1650,
             "https://www.anibis.ch/listing?a=1&b=2",
-            lambda: b"PNG DATA",
+            Figure(),
             bot_token="secret",
             chat_id="123",
         )
@@ -40,12 +45,12 @@ class TelegramBotTest(unittest.TestCase):
     def test_requires_credentials_before_rendering_image(self) -> None:
         with patch.dict("os.environ", {}, clear=True):
             with self.assertRaisesRegex(TelegramError, "TELEGRAM_BOT_TOKEN"):
-                send_message("MacBook Air", 700, 900, "https://example.com", b"png")
+                send_message("MacBook Air", 700, 900, "https://example.com", object())
 
-    def test_dummy_plot_can_be_rendered(self) -> None:
+    def test_deal_plot_can_be_rendered(self) -> None:
         from matplotlib import pyplot as plt
 
-        figure = dummy_plot()
+        figure = deal_plot(1_650, 1_190)
         output = io.BytesIO()
         figure.savefig(output, format="png")
         self.assertTrue(output.getvalue().startswith(b"\x89PNG"))

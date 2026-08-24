@@ -1,18 +1,16 @@
-"""Send a formatted good-buy notification through the Telegram Bot API."""
-
-from __future__ import annotations
+"""Send formatted prospect notifications through the Telegram Bot API."""
 
 import html
 import io
 import json
 import math
-import mimetypes
 import os
-import random
+import sqlite3
 import uuid
-from collections.abc import Callable
+from contextlib import closing
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, BinaryIO, Protocol, TypeAlias
+from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -20,14 +18,6 @@ from urllib.request import Request, urlopen
 from dotenv import load_dotenv
 
 load_dotenv()
-
-
-class FigureLike(Protocol):
-    def savefig(self, target: BinaryIO, **kwargs: Any) -> None: ...
-
-
-Image: TypeAlias = str | Path | bytes | bytearray | BinaryIO | FigureLike
-ImageSource: TypeAlias = Image | Callable[[], Image]
 
 
 class TelegramError(RuntimeError):
@@ -49,30 +39,7 @@ def _caption(specs: str, price: float, expected_price: float, url: str) -> str:
     )
 
 
-def _image_bytes(image: ImageSource) -> tuple[bytes, str, str]:
-    value = image() if callable(image) else image
-    if isinstance(value, (str, Path)):
-        path = Path(value)
-        return (
-            path.read_bytes(),
-            path.name,
-            mimetypes.guess_type(path.name)[0] or "application/octet-stream",
-        )
-    if isinstance(value, (bytes, bytearray)):
-        return bytes(value), "deal.png", "image/png"
-    if hasattr(value, "savefig"):
-        output = io.BytesIO()
-        value.savefig(output, format="png", dpi=160, bbox_inches="tight")
-        return output.getvalue(), "deal.png", "image/png"
-    if hasattr(value, "read"):
-        data = value.read()
-        if not isinstance(data, (bytes, bytearray)):
-            raise TypeError("image file must be opened in binary mode")
-        return bytes(data), "deal.png", "image/png"
-    raise TypeError("image must be a path, bytes, binary file, figure, or callable")
-
-
-def _multipart(fields: dict[str, str], image: ImageSource) -> tuple[bytes, str]:
+def _multipart(fields: dict[str, str], figure: Any) -> tuple[bytes, str]:
     boundary = uuid.uuid4().hex
     marker = f"--{boundary}\r\n".encode()
     body = bytearray()
@@ -82,15 +49,16 @@ def _multipart(fields: dict[str, str], image: ImageSource) -> tuple[bytes, str]:
         body.extend(value.encode())
         body.extend(b"\r\n")
 
-    data, filename, content_type = _image_bytes(image)
+    output = io.BytesIO()
+    figure.savefig(output, format="png", dpi=160, bbox_inches="tight")
     body.extend(marker)
     body.extend(
         (
             'Content-Disposition: form-data; name="photo"; '
-            f'filename="{filename}"\r\nContent-Type: {content_type}\r\n\r\n'
+            'filename="deal.png"\r\nContent-Type: image/png\r\n\r\n'
         ).encode()
     )
-    body.extend(data)
+    body.extend(output.getvalue())
     body.extend(f"\r\n--{boundary}--\r\n".encode())
     return bytes(body), boundary
 
@@ -98,9 +66,9 @@ def _multipart(fields: dict[str, str], image: ImageSource) -> tuple[bytes, str]:
 def send_message(
     specs: str,
     price: float,
-    expectedPrice: float,
+    expected_price: float,
     url: str,
-    image: ImageSource,
+    figure: Any,
     *,
     bot_token: str | None = None,
     chat_id: str | None = None,
@@ -118,9 +86,9 @@ def send_message(
     if not specs.strip():
         raise ValueError("specs must not be empty")
     price = float(price)
-    expected_price = float(expectedPrice)
+    expected_price = float(expected_price)
     if not all(math.isfinite(value) and value >= 0 for value in (price, expected_price)):
-        raise ValueError("price and expectedPrice must be finite, non-negative numbers")
+        raise ValueError("prices must be finite, non-negative numbers")
     if urlsplit(url).scheme not in {"http", "https"} or not urlsplit(url).netloc:
         raise ValueError("url must be an absolute HTTP(S) URL")
 
@@ -130,7 +98,7 @@ def send_message(
             "caption": _caption(specs.strip(), price, expected_price, url),
             "parse_mode": "HTML",
         },
-        image,
+        figure,
     )
     request = Request(
         f"https://api.telegram.org/bot{bot_token}/sendPhoto",
@@ -157,44 +125,74 @@ def send_message(
     return payload
 
 
-def dummy_plot(expected_price: float = 1_650, actual_price: float = 1_190) -> Any:
-    """Return a Matplotlib figure populated with deterministic dummy prices."""
+def deal_plot(expected_price: float, actual_price: float) -> Any:
+    """Return a compact expected-versus-asking-price figure."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    rng = random.Random(7)
-    expected = [10 ** rng.uniform(2.55, 3.65) for _ in range(75)]
-    actual = [value * math.exp(rng.gauss(0, 0.17)) for value in expected]
-
-    figure, axis = plt.subplots(figsize=(8, 6))
-    axis.scatter(expected, actual, color="#8793a6", alpha=0.8, label="Market range")
-    axis.scatter(
-        [expected_price],
-        [actual_price],
-        color="#d94a62",
-        s=70,
-        zorder=3,
-        label="This good buy",
+    figure, axis = plt.subplots(figsize=(7, 3))
+    bars = axis.barh(
+        ["Asking price", "Model expectation"],
+        [actual_price, expected_price],
+        color=["#d94a62", "#173a5e"],
     )
-    bounds = (250, 5_000)
-    axis.plot(bounds, bounds, "--", color="#173a5e", label="Expected = asking")
-    axis.set(xscale="log", yscale="log", xlim=bounds, ylim=bounds)
-    axis.set_title("Actual asking price versus model expectation")
-    axis.set_xlabel("Expected asking price (CHF)")
-    axis.set_ylabel("Actual asking price (CHF)")
-    axis.grid(True, color="#d3d3d3")
-    axis.legend(loc="upper left")
+    axis.bar_label(bars, labels=[_format_chf(actual_price), _format_chf(expected_price)])
+    axis.set(title="Anibis asking price versus model expectation", xlabel="CHF")
+    axis.spines[["top", "right", "left"]].set_visible(False)
     figure.tight_layout()
     return figure
 
 
-if __name__ == "__main__":
-    send_message(
-        specs="MacBook Pro 14-inch · M3 Pro · 18 GB RAM · 512 GB SSD",
-        price=1_190,
-        expectedPrice=1_650,
-        url="https://www.anibis.ch/",
-        image=lambda: dummy_plot(1_650, 1_190),
+def _specs(prospect: dict[str, Any]) -> str:
+    family = prospect["familyCPU"]
+    chip = prospect["generationCPU"] + (f" {family}" if family != "Base" else "")
+    return (
+        f"MacBook {prospect['serie']} {prospect['screenSize']}-inch · {chip} · "
+        f"{prospect['RAM']} GB RAM · {prospect['storageGB']:g} GB SSD"
     )
+
+
+def notify_new_prospects(database: Path, prospects: Iterable[dict[str, Any]]) -> int:
+    """Notify prospects not previously sent and remember each successful send."""
+    with closing(sqlite3.connect(database)) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS notifications (
+                listingID TEXT PRIMARY KEY,
+                notifiedAt TEXT NOT NULL
+            )
+            """
+        )
+        connection.commit()
+        notified = {
+            row[0] for row in connection.execute("SELECT listingID FROM notifications")
+        }
+        sent = 0
+        for prospect in prospects:
+            listing_id = str(prospect["listingID"])
+            if listing_id in notified:
+                continue
+            expected_price = float(prospect["expectedPrice"])
+            actual_price = float(prospect["price"])
+            figure = deal_plot(expected_price, actual_price)
+            try:
+                send_message(
+                    _specs(prospect),
+                    actual_price,
+                    expected_price,
+                    prospect["url"],
+                    figure,
+                )
+            finally:
+                from matplotlib import pyplot as plt
+
+                plt.close(figure)
+            connection.execute(
+                "INSERT INTO notifications VALUES (?, ?)",
+                (listing_id, datetime.now(UTC).isoformat()),
+            )
+            connection.commit()
+            sent += 1
+        return sent
