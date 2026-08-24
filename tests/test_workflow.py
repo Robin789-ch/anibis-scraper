@@ -62,10 +62,14 @@ class WorkflowTest(unittest.TestCase):
                 connection.execute("INSERT INTO offers VALUES ('1', 'Air', 'Nice')")
                 connection.commit()
 
-            self.assertEqual(parse_database(database), 1)
+            with self.assertLogs("anibis_deals.parser", level="INFO") as logs:
+                self.assertEqual(parse_database(database), 1)
             self.assertEqual(parse_database(database), 0)
 
         run.assert_awaited_once()
+        messages = [record.getMessage() for record in logs.records]
+        self.assertIn("Parser batch started: 1/1 (1 offers)", messages)
+        self.assertIn("Parser progress: 1/1 offers", messages)
 
     def test_successful_notification_is_sent_only_once(self) -> None:
         prospect = {
@@ -100,12 +104,30 @@ class WorkflowTest(unittest.TestCase):
         from main import main
 
         database = Path("test.sqlite3")
-        main(database)
+        with self.assertLogs("main", level="INFO") as logs:
+            main(database)
 
         refresh.assert_called_once_with(database, "macbook", category="computers")
         parse.assert_called_once_with(database)
         find.assert_called_once_with(database, 0.01)
         notify.assert_called_once_with(database, [{"listingID": "1"}])
+        messages = [record.getMessage() for record in logs.records]
+        self.assertIn("Step completed: scrape (offers=10)", messages)
+        self.assertIn("Step completed: parse (offers=2)", messages)
+        self.assertIn("Step completed: rank (prospects=1)", messages)
+        self.assertIn("Step completed: notify (notifications=1)", messages)
+
+    @patch("main.parse_database", side_effect=RuntimeError("LLM unavailable"))
+    @patch("main.refresh_database", return_value=10)
+    def test_main_logs_the_failing_step(self, refresh, parse) -> None:
+        from main import main
+
+        with self.assertLogs("main", level="INFO") as logs:
+            with self.assertRaisesRegex(RuntimeError, "LLM unavailable"):
+                main(Path("test.sqlite3"))
+
+        self.assertIn("Workflow failed during step: parse", logs.output[-1])
+        self.assertIsNotNone(logs.records[-1].exc_info)
 
 
 if __name__ == "__main__":

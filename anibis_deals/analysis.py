@@ -1,5 +1,6 @@
 """Rank unusually cheap MacBook offers."""
 
+import logging
 import math
 import sqlite3
 from contextlib import closing
@@ -7,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 def _market(database: Path) -> pd.DataFrame:
@@ -73,7 +76,8 @@ def rank_prospects(market: pd.DataFrame) -> pd.DataFrame:
     matrix = np.hstack(blocks)
     log_price = np.log(market["price"].to_numpy(dtype=float))
     weights = np.ones(len(log_price))
-    for _ in range(40):
+    for iteration in range(1, 41):
+        logger.info("Price model iteration: %d/40", iteration)
         root_weights = np.sqrt(weights)
         coefficients = np.linalg.lstsq(
             matrix * root_weights[:, None], log_price * root_weights, rcond=None
@@ -86,6 +90,7 @@ def rank_prospects(market: pd.DataFrame) -> pd.DataFrame:
             1, scaled, out=np.ones_like(scaled), where=scaled > 1
         )
         if np.max(np.abs(new_weights - weights)) < 1e-6:
+            logger.info("Price model converged after %d iterations", iteration)
             break
         weights = new_weights
 
@@ -103,7 +108,10 @@ def find_best_prospects(database: Path, top_share: float = 0.01) -> list[dict]:
     """Return the best ``top_share`` of usable listings."""
     if not 0 < top_share <= 1:
         raise ValueError("top_share must be between 0 and 1")
-    ranked = rank_prospects(_market(database))
+    logger.info("Loading eligible offers from %s", database)
+    market = _market(database)
+    logger.info("Ranking %d eligible offers", len(market))
+    ranked = rank_prospects(market)
     if ranked.empty:
         return []
     count = max(1, math.ceil(top_share * len(ranked)))

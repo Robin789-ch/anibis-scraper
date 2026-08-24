@@ -3,6 +3,7 @@
 import html
 import io
 import json
+import logging
 import math
 import os
 import sqlite3
@@ -18,6 +19,7 @@ from urllib.request import Request, urlopen
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 
 class TelegramError(RuntimeError):
@@ -169,11 +171,20 @@ def notify_new_prospects(database: Path, prospects: Iterable[dict[str, Any]]) ->
         notified = {
             row[0] for row in connection.execute("SELECT listingID FROM notifications")
         }
+        logger.info("Loaded %d previously sent notifications", len(notified))
         sent = 0
-        for prospect in prospects:
+        for position, prospect in enumerate(prospects, 1):
             listing_id = str(prospect["listingID"])
             if listing_id in notified:
+                logger.info(
+                    "Notification candidate %d skipped: listing %s already sent",
+                    position,
+                    listing_id,
+                )
                 continue
+            logger.info(
+                "Sending notification candidate %d: listing %s", position, listing_id
+            )
             expected_price = float(prospect["expectedPrice"])
             actual_price = float(prospect["price"])
             figure = deal_plot(expected_price, actual_price)
@@ -195,4 +206,5 @@ def notify_new_prospects(database: Path, prospects: Iterable[dict[str, Any]]) ->
             )
             connection.commit()
             sent += 1
+            logger.info("Notification sent: listing %s (total=%d)", listing_id, sent)
         return sent

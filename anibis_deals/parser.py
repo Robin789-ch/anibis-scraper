@@ -1,6 +1,7 @@
 """Parse unprocessed offers with an LLM."""
 
 import asyncio
+import logging
 import sqlite3
 from contextlib import closing
 from datetime import date
@@ -10,6 +11,8 @@ from typing import Literal
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
+
+logger = logging.getLogger(__name__)
 
 
 class MacBookModel(BaseModel):
@@ -30,13 +33,23 @@ agent = Agent(
     "openrouter:deepseek/deepseek-v4-flash-0731",
     output_type=MacBookModel,
     instructions=(
-        "You are an expert in computer hardware. Label the MacBook in the seller "
-        "listing. Use serie Air, Pro, or Other; generationCPU M1 through M5 or "
-        "Other; and familyCPU Base, Pro, Max, Ultra, or Other. If Apple Silicon "
-        "family is omitted, use Base. Return RAM and storageSize in GB, screenSize "
-        "in inches, damaged as a boolean, batteryHealth from 0 to 100, and year. "
-        "Use 0 when battery health or year is absent. Estimate battery health "
-        "pessimistically from qualitative descriptions."
+        "You are an expert in computer hardware. Label MacBook computers from "
+        "online seller listings.\n"
+        "serie: Air for MacBook Air, Pro for MacBook Pro, or Other if the listing "
+        "is not for a MacBook.\n"
+        "generationCPU: M1 through M5 for the corresponding Apple Silicon "
+        "generation, or Other for Intel, non-Apple-Silicon, or unknown CPUs.\n"
+        "familyCPU: Base for an Apple Silicon chip without a Pro, Max, or Ultra "
+        "suffix; otherwise Pro, Max, Ultra, or Other for non-Apple-Silicon CPUs.\n"
+        "RAM: Installed RAM or unified memory in GB.\n"
+        "storageSize: SSD storage capacity in GB.\n"
+        "screenSize: Screen diagonal in inches.\n"
+        "damaged: True if the laptop is damaged, otherwise False.\n"
+        "batteryHealth: Maximum battery capacity from 0 to 100. Use a stated "
+        "percentage when available; otherwise estimate pessimistically from a "
+        "qualitative description.\n"
+        "year: Production year.\n"
+        "Use 0 for any unknown numeric value. Do not invent missing specifications."
     ),
 )
 
@@ -83,10 +96,20 @@ async def _parse_offer(row: tuple[str, str | None, str | None]) -> tuple:
 
 async def _parse_offers(rows: list[tuple], batch_size: int) -> list[tuple]:
     parsed = []
+    batch_count = (len(rows) + batch_size - 1) // batch_size
     for start in range(0, len(rows), batch_size):
-        parsed.extend(
-            await asyncio.gather(*map(_parse_offer, rows[start : start + batch_size]))
+        batch_number = start // batch_size + 1
+        batch = rows[start : start + batch_size]
+        logger.info(
+            "Parser batch started: %d/%d (%d offers)",
+            batch_number,
+            batch_count,
+            len(batch),
         )
+        parsed.extend(
+            await asyncio.gather(*map(_parse_offer, batch))
+        )
+        logger.info("Parser progress: %d/%d offers", len(parsed), len(rows))
     return parsed
 
 
@@ -105,6 +128,7 @@ def parse_database(database: Path, batch_size: int = 20) -> int:
             WHERE listingID NOT IN (SELECT listingID FROM parsed)
             """
         ).fetchall()
+        logger.info("Parser found %d unparsed offers", len(rows))
         if not rows:
             return 0
 
