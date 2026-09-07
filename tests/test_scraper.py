@@ -11,6 +11,7 @@ from anibis_deals.scraper import (
     main,
     page_url,
     parse_search_page,
+    refresh_database,
     result_nodes,
     scrape,
     to_offer,
@@ -19,6 +20,33 @@ from anibis_deals.scraper import (
 
 
 class ScraperTest(unittest.TestCase):
+    @patch("anibis_deals.scraper.fetch_page")
+    def test_refresh_stores_localized_listing_without_slug(self, fetch_page) -> None:
+        node = {
+            "listingID": "1073910429",
+            "localization": {"title": "MacBook", "body": "Good condition"},
+            "seoInformation": {"deSlug": None, "frSlug": None, "itSlug": None},
+            "primaryCategory": {"categoryID": "computers"},
+            "formattedPrice": "720.-",
+        }
+        fetch_page.return_value = (
+            {"listings": {"totalCount": 1, "edges": [{"node": node}]}},
+            "https://www.anibis.ch/fr/q/cherche/token",
+        )
+
+        with TemporaryDirectory() as directory:
+            database = Path(directory) / "offers.sqlite3"
+            self.assertEqual(refresh_database(database), 1)
+            with closing(sqlite3.connect(database)) as connection:
+                row = connection.execute(
+                    "SELECT title, description, url FROM offers"
+                ).fetchone()
+
+        self.assertEqual(
+            row,
+            ("MacBook", "Good condition", "https://www.anibis.ch/fr/vi/1073910429"),
+        )
+
     @patch("anibis_deals.scraper.scrape", return_value=[])
     def test_output_file_is_overwritten(self, scrape) -> None:
         with TemporaryDirectory() as directory:

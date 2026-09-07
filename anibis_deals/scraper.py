@@ -169,19 +169,20 @@ def result_nodes(result: dict[str, Any]) -> Iterator[dict[str, Any]]:
 
 def to_offer(node: dict[str, Any], language: str = "fr") -> dict[str, Any]:
     location = node.get("postcodeInformation") or {}
+    localization = node.get("localization") or {}
     slug = (node.get("seoInformation") or {}).get(f"{language}Slug")
     listing_id = node.get("listingID")
     return {
         "listingID": listing_id,
-        "title": node.get("title"),
+        "title": localization.get("title", node.get("title")),
         "price": node.get("formattedPrice"),
         "date": node.get("timestamp"),
-        "description": node.get("body"),
+        "description": localization.get("body", node.get("body")),
         "city": location.get("locationName"),
         "postcode": location.get("postcode"),
         "url": (
-            f"https://www.anibis.ch/{language}/vi/{slug}/{listing_id}"
-            if slug and listing_id
+            f"https://www.anibis.ch/{language}/vi/{slug + '/' if slug else ''}{listing_id}"
+            if listing_id
             else None
         ),
     }
