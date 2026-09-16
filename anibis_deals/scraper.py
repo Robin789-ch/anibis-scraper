@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export Anibis search results as JSON Lines."""
+"""Scrape Anibis offers into SQLite."""
 
 import argparse
 import json
@@ -169,19 +169,20 @@ def result_nodes(result: dict[str, Any]) -> Iterator[dict[str, Any]]:
 
 def to_offer(node: dict[str, Any], language: str = "fr") -> dict[str, Any]:
     location = node.get("postcodeInformation") or {}
+    localization = node.get("localization") or {}
     slug = (node.get("seoInformation") or {}).get(f"{language}Slug")
     listing_id = node.get("listingID")
     return {
         "listingID": listing_id,
-        "title": node.get("title"),
+        "title": localization.get("title", node.get("title")),
         "price": node.get("formattedPrice"),
         "date": node.get("timestamp"),
-        "description": node.get("body"),
+        "description": localization.get("body", node.get("body")),
         "city": location.get("locationName"),
         "postcode": location.get("postcode"),
         "url": (
-            f"https://www.anibis.ch/{language}/vi/{slug}/{listing_id}"
-            if slug and listing_id
+            f"https://www.anibis.ch/{language}/vi/{slug + '/' if slug else ''}{listing_id}"
+            if listing_id
             else None
         ),
     }
@@ -267,10 +268,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def write_offers(
     offers: Iterable[dict[str, Any]],
-    output: TextIO,
+    output: TextIO | None = None,
     database: Path | None = None,
-) -> None:
+) -> int:
     connection = sqlite3.connect(database, timeout=30) if database else None
+    written = 0
     try:
         if connection:
             connection.execute(CREATE_OFFERS_TABLE)
@@ -320,8 +322,10 @@ def write_offers(
                         offer["lastSeen"],
                     ),
                 )
-            json.dump(offer, output, ensure_ascii=False)
-            output.write("\n")
+            if output:
+                json.dump(offer, output, ensure_ascii=False)
+                output.write("\n")
+            written += 1
 
         if connection:
             connection.commit()
@@ -332,6 +336,31 @@ def write_offers(
     finally:
         if connection:
             connection.close()
+    return written
+
+
+def refresh_database(
+    database: Path,
+    query: str = "macbook",
+    *,
+    category: str | None = "computers",
+    language: str = "fr",
+    delay: float = 1.0,
+    timeout: float = 30.0,
+    limit: int | None = None,
+) -> int:
+    """Refresh ``database`` and return the number of scraped offers."""
+    return write_offers(
+        scrape(
+            query,
+            category=category,
+            language=language,
+            delay=delay,
+            timeout=timeout,
+            limit=limit,
+        ),
+        database=database,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
